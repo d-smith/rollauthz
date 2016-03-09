@@ -33,6 +33,24 @@ func (e ErrParse) Error() string {
 	return fmt.Sprintf("error parsing token: %s", e.source)
 }
 
+type ErrValidation struct{}
+
+func (e ErrValidation) Error() string {
+	return fmt.Sprintf("token validation failed")
+}
+
+type ErrAuthCodeUsedForAccess struct{}
+
+func (e ErrAuthCodeUsedForAccess) Error() string {
+	return "auth code used for access token"
+}
+
+type ErrClaimsMissingSub struct{}
+
+func (e ErrClaimsMissingSub) Error() string {
+	return "claims missing sub"
+}
+
 //ValidateAccessToken takes an authorization header value, and, if the authorization header has
 //a JWT bearer token, returns the claims in the token is it is valid. A token is valid
 //if it was signed with the key associated with the aud claim, and passes other tests
@@ -50,15 +68,28 @@ func (raz RollAuthZ) ValidateAccessToken(authzHeader string) (map[string]interfa
 	bearerToken := strings.TrimSpace(parts[1])
 	token, err := jwt.Parse(bearerToken, rolltoken.GenerateKeyExtractionFunction(raz.SecretsRepo))
 	if err != nil {
+		log.Info("Unable to parse token ", err.Error())
 		return nil, ErrParse{err}
 	}
-	println(token)
 
 	//Make sure the token is valid
+	if !token.Valid {
+		log.Info("Invalid token presented to service", token)
+		return nil, ErrValidation{}
+	}
 
 	//Make sure it's no an authcode token
+	if rolltoken.IsAuthCode(token) {
+		log.Info("auth code used as access token")
+		return nil, ErrAuthCodeUsedForAccess{}
+	}
 
 	//Make sure it includes a sub claim
+	sub, ok := token.Claims["sub"].(string)
+	if !ok || sub == "" {
+		log.Info("sub claim not present in token")
+		return nil, ErrClaimsMissingSub{}
+	}
 
 	return nil, nil
 }

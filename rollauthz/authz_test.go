@@ -8,10 +8,6 @@ import (
 	"testing"
 )
 
-const (
-	aToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBsaWNhdGlvbiI6ImRldiBwb3J0YWwiLCJhdWQiOiIzNGU0M2YwYS04N2RlLTQ3OTMtNTJjOS1iZGQ1MTgyNGYwNWMiLCJleHAiOjE0NTY5MjQ3OTEsImlhdCI6MTQ1NjgzODM5MSwianRpIjoiNDJjYmNiZDItZGQ5OS00NWVlLTcwMzYtNTM5ZjU5YjM1Y2FmIiwic2NvcGUiOiIiLCJzdWIiOiJ1c2VyIn0.no-7QKPf0XrrJiq44dWDHoirpxOR2N0mzvyrihxllv8TUix-vQdjao0fvHjzUA2X9rZWOcXmZC6zzJDlaF0kVO-mwSAa74btZI4oxsp4zRX_mtwwo5THsktAKcedzWezB-SrQqV-8NrNEjLbdl27rAydvAfc14bp9EV67fzyQws"
-)
-
 func TestNonBearerTokenHeaderValuesRejected(t *testing.T) {
 	raz := RollAuthZ{}
 	claims, err := raz.ValidateAccessToken("not a bearer token beader")
@@ -48,4 +44,48 @@ func TestParseGoodToken(t *testing.T) {
 	}
 	_, err = raz.ValidateAccessToken("Bearer " + token)
 	assert.Nil(t, err)
+}
+
+func TestAuthCodeUsedForAccess(t *testing.T) {
+
+	privateKey, publicKey, err := secrets.GenerateKeyPair()
+	assert.Nil(t, err)
+
+	secretsMock := new(mocks.SecretsRepo)
+	secretsMock.On("RetrievePrivateKeyForApp", "1111-2222-3333333-4444444").Return(privateKey, nil)
+	secretsMock.On("RetrievePublicKeyForApp", "1111-2222-3333333-4444444").Return(publicKey, nil)
+
+	token, err := rolltoken.GenerateCode("a-subject", "", "1111-2222-3333333-4444444", privateKey)
+	assert.Nil(t, err)
+
+	raz := RollAuthZ{
+		secretsMock,
+	}
+	_, err = raz.ValidateAccessToken("Bearer " + token)
+	if assert.NotNil(t, err) {
+		_, ok := err.(ErrAuthCodeUsedForAccess)
+		assert.True(t, ok, "expected a rollauthz.ErrAuthCodeUsedForAccess error")
+	}
+
+}
+
+func TestClaimsMissingSub(t *testing.T) {
+	privateKey, publicKey, err := secrets.GenerateKeyPair()
+	assert.Nil(t, err)
+
+	secretsMock := new(mocks.SecretsRepo)
+	secretsMock.On("RetrievePrivateKeyForApp", "1111-2222-3333333-4444444").Return(privateKey, nil)
+	secretsMock.On("RetrievePublicKeyForApp", "1111-2222-3333333-4444444").Return(publicKey, nil)
+
+	token, err := rolltoken.GenerateToken("", "", "1111-2222-3333333-4444444", "app name", privateKey)
+	assert.Nil(t, err)
+
+	raz := RollAuthZ{
+		secretsMock,
+	}
+	_, err = raz.ValidateAccessToken("Bearer " + token)
+	if assert.NotNil(t, err) {
+		_, ok := err.(ErrClaimsMissingSub)
+		assert.True(t, ok, "expected a rollauthz.ErrAuthCodeUsedForAccess error")
+	}
 }
