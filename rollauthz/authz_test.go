@@ -36,14 +36,23 @@ func TestParseGoodToken(t *testing.T) {
 	secretsMock.On("RetrievePrivateKeyForApp", "1111-2222-3333333-4444444").Return(privateKey, nil)
 	secretsMock.On("RetrievePublicKeyForApp", "1111-2222-3333333-4444444").Return(publicKey, nil)
 
-	token, err := rolltoken.GenerateToken("a-subject", "", "1111-2222-3333333-4444444", "app name", privateKey)
+	token, err := rolltoken.GenerateToken("a-subject", "laser", "1111-2222-3333333-4444444", "app name", privateKey)
 	assert.Nil(t, err)
 
 	raz := RollAuthZ{
 		secretsMock,
 	}
-	_, err = raz.ValidateAccessToken("Bearer " + token)
+	claims, err := raz.ValidateAccessToken("Bearer " + token)
 	assert.Nil(t, err)
+	if assert.NotNil(t, claims) {
+		assert.True(t, claims["jti"] != "")
+		assert.Equal(t, "a-subject", claims["sub"])
+		assert.Equal(t, "app name", claims["application"])
+		assert.Equal(t, "laser", claims["scope"])
+		assert.Equal(t, "1111-2222-3333333-4444444", claims["aud"])
+		assert.NotNil(t, claims["exp"])
+		assert.NotNil(t, claims["iat"])
+	}
 }
 
 func TestAuthCodeUsedForAccess(t *testing.T) {
@@ -86,6 +95,30 @@ func TestClaimsMissingSub(t *testing.T) {
 	_, err = raz.ValidateAccessToken("Bearer " + token)
 	if assert.NotNil(t, err) {
 		_, ok := err.(ErrClaimsMissingSub)
-		assert.True(t, ok, "expected a rollauthz.ErrAuthCodeUsedForAccess error")
+		assert.True(t, ok, "expected a rollauthz.ErrClaimsMissingSub error")
+	}
+}
+
+func TestInvalidSignature(t *testing.T) {
+	privateKey, publicKey, err := secrets.GenerateKeyPair()
+	assert.Nil(t, err)
+
+	anotherPrivateKey, _, err := secrets.GenerateKeyPair()
+	assert.Nil(t, err)
+
+	secretsMock := new(mocks.SecretsRepo)
+	secretsMock.On("RetrievePrivateKeyForApp", "1111-2222-3333333-4444444").Return(privateKey, nil)
+	secretsMock.On("RetrievePublicKeyForApp", "1111-2222-3333333-4444444").Return(publicKey, nil)
+
+	token, err := rolltoken.GenerateToken("bad-guy-or-gal", "", "1111-2222-3333333-4444444", "app name", anotherPrivateKey)
+	assert.Nil(t, err)
+
+	raz := RollAuthZ{
+		secretsMock,
+	}
+	_, err = raz.ValidateAccessToken("Bearer " + token)
+	if assert.NotNil(t, err) {
+		_, ok := err.(ErrParse)
+		assert.True(t, ok, "expected a rollauthz.ErrParse error")
 	}
 }

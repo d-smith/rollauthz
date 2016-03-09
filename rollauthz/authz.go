@@ -91,5 +91,5 @@ func (raz RollAuthZ) ValidateAccessToken(authzHeader string) (map[string]interfa
 		return nil, ErrClaimsMissingSub{}
 	}
 
-	return nil, nil
+	return token.Claims, nil
 }
